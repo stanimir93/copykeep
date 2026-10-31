@@ -65,7 +65,9 @@ enum Caret {
     /// The caret's rectangle in screen coordinates (origin bottom left), or nil when the app
     /// doesn't say: no Accessibility access, no text field focused, or an app that doesn't
     /// report it (some Electron apps).
-    static func rect() -> NSRect? {
+    /// `lastCharacter` measures the character before the cursor instead, which some apps
+    /// (TextEdit) report more exactly than the empty cursor: it's what the suggestions sit under.
+    static func rect(lastCharacter: Bool = false) -> NSRect? {
         guard Paster.trusted else { return nil }
         let system = AXUIElementCreateSystemWide()
         AXUIElementSetMessagingTimeout(system, 0.25)
@@ -75,7 +77,13 @@ enum Caret {
         let element = focused as! AXUIElement
 
         var range: CFTypeRef?
-        if AXUIElementCopyAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, &range) == .success, let range {
+        if AXUIElementCopyAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, &range) == .success, var range {
+            var r = CFRange()
+            if lastCharacter, CFGetTypeID(range) == AXValueGetTypeID(), AXValueGetValue(range as! AXValue, .cfRange, &r),
+               r.location > 0 {
+                var before = CFRange(location: r.location - 1, length: 1)
+                if let value = AXValueCreate(.cfRange, &before) { range = value }
+            }
             var bounds: CFTypeRef?
             if AXUIElementCopyParameterizedAttributeValue(element, kAXBoundsForRangeParameterizedAttribute as CFString,
                                                           range, &bounds) == .success,

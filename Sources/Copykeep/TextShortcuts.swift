@@ -129,6 +129,12 @@ final class TextExpander {
     /// What the clipboard held before the last shortcut went in, and how to tell it's still ours.
     private var restore: (saved: Reps, changeCount: Int)?
     private var expansion = 0
+    /// The list of shortcuts that start with the word being typed.
+    private let suggestions = SuggestionPopup()
+    /// Esc closed the list; it stays closed until the next word.
+    private var dismissed = false
+    /// Keys the list used (↑ ↓ Tab Return Esc): their key-up is kept from the app too.
+    private var swallowed: Set<Int64> = []
     /// True while Copykeep's own windows take the keys (the panel, Settings, the editor).
     var isSuspended: () -> Bool = { false }
 
@@ -137,11 +143,13 @@ final class TextExpander {
     /// Marks the last of the held-back keys when they're let through.
     private static let lastHeld: Int64 = 0x436B_6B71
     static var enabled: Bool { UserDefaults.standard.object(forKey: "expandShortcuts") as? Bool ?? true }
+    static var suggests: Bool { UserDefaults.standard.object(forKey: "suggestShortcuts") as? Bool ?? true }
 
     init(watcher: ClipboardWatcher) {
         self.watcher = watcher
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification,
-                                                          object: nil, queue: .main) { [weak self] _ in self?.typed = "" }
+                                                          object: nil, queue: .main) { [weak self] _ in self?.reset() }
+        suggestions.model.onPick = { [weak self] s in self?.accept(s) }
     }
 
     /// Starts watching the keyboard once Accessibility is allowed; call again later when it isn't yet.
@@ -172,8 +180,8 @@ final class TextExpander {
             return true
         case .keyDown, .keyUp:
             break
-        default: // a click moves the text cursor
-            if pending == nil { typed = "" }
+        default: // a click moves the text cursor, unless it's on the list of suggestions
+            if pending == nil, !suggestions.containsMouse { reset() }
             return true
         }
         let mark = event.getIntegerValueField(.eventSourceUserData)
@@ -191,38 +199,101 @@ final class TextExpander {
             held.append(copy)
             return false
         }
+        if type == .keyUp, swallowed.remove(code) != nil { return false }
         guard type == .keyDown else { return true }
-        guard Self.enabled, !isSuspended(), let key = Self.typedKey(event) else {
+        guard Self.enabled, !isSuspended() else { reset(); return true }
+        if suggestions.isShown, event.flags.intersection([.maskCommand, .maskControl]).isEmpty, useForList(Int(code)) {
+            swallowed.insert(code)
+            return false
+        }
+        guard let key = Self.typedKey(event) else {
             // A shortcut key, Return, an arrow…: the text cursor may have moved, so start over.
-            typed = ""
+            reset()
             return true
         }
         switch key {
         case .delete:
             if !typed.isEmpty { typed.removeLast() }
+            suggest()
             return true
         case .text(let s) where s != " ":
             typed = String((typed + s).suffix(100))
+            suggest()
             return true
         case .text:
             break
         }
         // A space ends the word: when the word is a trigger, it's replaced (the space stays).
         // Waiting for the space lets one trigger start another, like -phone and -phone-uk.
+        suggestions.hide()
+        dismissed = false
         TextShortcuts.shared.reloadIfStale()
         guard let match = TextShortcuts.shared.match(typed) else {
             typed = String((typed + " ").suffix(100))
             return true
         }
         typed = ""
-        pending = match
+        // The space goes through first, so the trigger and the space are there to delete.
+        expand(match, deleting: match.trigger.count + 1, then: " ")
+        return true
+    }
+
+    /// Puts in `shortcut`'s text (and `then`) in place of the last `count` characters typed.
+    private func expand(_ shortcut: TextShortcut, deleting count: Int, then: String = "") {
+        pending = shortcut
         expansion += 1
         let id = expansion
-        // The space goes through first, so the trigger and the space are there to delete.
-        DispatchQueue.main.async { self.insert(match.text + " ", deleting: match.trigger.count + 1) }
+        DispatchQueue.main.async { self.insert(shortcut.text + then, deleting: count) }
         // In case the ⌘V is never seen coming back, don't hold the keyboard for long.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { if self.expansion == id { self.release(all: true) } }
+    }
+
+    /// The word being typed: what follows the last space.
+    private var word: Substring {
+        typed[(typed.lastIndex(of: " ").map { typed.index(after: $0) } ?? typed.startIndex)...]
+    }
+
+    /// Shows the shortcuts that start with the word being typed, or hides the list when none do.
+    private func suggest() {
+        let w = word
+        if w.isEmpty { dismissed = false }
+        guard Self.suggests, !dismissed, !w.isEmpty else { suggestions.hide(); return }
+        TextShortcuts.shared.reloadIfStale()
+        let items = TextShortcuts.shared.shortcuts.filter { $0.trigger.hasPrefix(w) }
+        if items.isEmpty { suggestions.hide() } else { suggestions.show(items) }
+    }
+
+    /// ↑ ↓ choose, Tab and Return put in the chosen shortcut, Esc closes the list. Returns false
+    /// for other keys, which go to the app.
+    private func useForList(_ code: Int) -> Bool {
+        switch code {
+        case kVK_DownArrow: suggestions.move(1)
+        case kVK_UpArrow: suggestions.move(-1)
+        case kVK_Tab, kVK_Return, kVK_ANSI_KeypadEnter:
+            guard let s = suggestions.selected else { return false }
+            accept(s)
+        case kVK_Escape:
+            dismissed = true
+            suggestions.hide()
+        default:
+            return false
+        }
         return true
+    }
+
+    /// Replaces the word being typed with `shortcut`'s text (chosen from the list).
+    private func accept(_ shortcut: TextShortcut) {
+        let count = word.count
+        suggestions.hide()
+        typed = ""
+        dismissed = false
+        expand(shortcut, deleting: count)
+    }
+
+    private func reset() {
+        typed = ""
+        dismissed = false
+        suggestions.hide()
     }
 
     /// Lets the keys held back during an expansion through, in the order they were typed. Keys

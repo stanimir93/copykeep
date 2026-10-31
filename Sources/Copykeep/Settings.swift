@@ -355,10 +355,13 @@ struct AutoClearSection: View {
 struct ShortcutsSection: View {
     @ObservedObject private var store = TextShortcuts.shared
     @AppStorage("expandShortcuts") private var expand = true
+    @AppStorage("suggestShortcuts") private var suggest = true
 
     var body: some View {
         Section {
             Toggle("Expand shortcuts as you type", isOn: $expand)
+            Toggle("Suggest shortcuts as you type", isOn: $suggest)
+                .disabled(!expand)
         }
         Section {
             ForEach(store.shortcuts) { s in
@@ -391,7 +394,7 @@ struct ShortcutsSection: View {
             }
         } footer: {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Type a shortcut such as -email and a space, at the start of a word in any app, and it's replaced with its text. The panel's Shortcuts tab lists them too. Needs Accessibility, like pasting.")
+                Text("Type a shortcut such as -email and a space, at the start of a word in any app, and it's replaced with its text. While you type one, the ones it could be are listed under the cursor: Tab or Return puts in the chosen one. The panel's Shortcuts tab lists them too. Needs Accessibility, like pasting.")
                 HStack(spacing: 4) {
                     Text("Saved in ~/.config/copykeep/shortcuts.json")
                     Button("Show") { NSWorkspace.shared.activateFileViewerSelecting([TextShortcuts.fileURL]) }
