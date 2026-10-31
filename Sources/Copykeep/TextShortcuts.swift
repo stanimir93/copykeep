@@ -2,7 +2,7 @@ import AppKit
 import Carbon.HIToolbox
 import CryptoKit
 
-/// A text shortcut: typing `trigger` in any app replaces it with `text`.
+/// A text shortcut: typing `trigger` and a space in any app replaces it with `text`.
 struct TextShortcut: Codable, Equatable, Identifiable {
     var trigger: String
     var text: String
@@ -53,6 +53,7 @@ final class TextShortcuts: ObservableObject {
 
     /// The shortcut whose trigger `typed` ends with, at the start of a word: after a space,
     /// punctuation or nothing, so "-email" fires but "re-email" doesn't. The longest wins.
+    /// Called when a space is typed.
     func match(_ typed: String) -> TextShortcut? {
         shortcuts.filter { !$0.trigger.isEmpty && typed.hasSuffix($0.trigger) }
             .sorted { $0.trigger.count > $1.trigger.count }
@@ -109,8 +110,8 @@ final class TextShortcuts: ObservableObject {
     }
 }
 
-/// Watches what you type in every app and, when it ends with a shortcut's trigger, deletes the
-/// trigger and pastes the shortcut's text. The paste goes through the clipboard, which gets its
+/// Watches what you type in every app and, when you type a space after a shortcut's trigger,
+/// deletes the trigger and pastes the shortcut's text (followed by the space). The paste goes through the clipboard, which gets its
 /// old contents back afterwards. Reading keys and pressing them for another app needs
 /// Accessibility access; until it's allowed, nothing is expanded.
 final class TextExpander {
@@ -133,6 +134,8 @@ final class TextExpander {
 
     /// Marks the keys Copykeep presses itself, so they aren't read as typing.
     private static let marker: Int64 = 0x436B_6B70
+    /// Marks the last of the held-back keys when they're let through.
+    private static let lastHeld: Int64 = 0x436B_6B71
     static var enabled: Bool { UserDefaults.standard.object(forKey: "expandShortcuts") as? Bool ?? true }
 
     init(watcher: ClipboardWatcher) {
@@ -173,12 +176,13 @@ final class TextExpander {
             if pending == nil { typed = "" }
             return true
         }
-        if event.getIntegerValueField(.eventSourceUserData) == Self.marker {
-            // Copykeep's own ⌘V has gone by: the keys held back can follow it.
-            if type == .keyUp, pending != nil, event.flags.contains(.maskCommand),
-               event.getIntegerValueField(.keyboardEventKeycode) == kVK_ANSI_V {
-                release()
-            }
+        let mark = event.getIntegerValueField(.eventSourceUserData)
+        if mark == Self.marker || mark == Self.lastHeld {
+            // Copykeep's own ⌘V, or the last key it let through, has gone by: the keys held back
+            // since can follow.
+            let pasted = type == .keyUp && event.flags.contains(.maskCommand)
+                && event.getIntegerValueField(.keyboardEventKeycode) == kVK_ANSI_V
+            if pending != nil, pasted || mark == Self.lastHeld { release() }
             return true
         }
         let code = event.getIntegerValueField(.keyboardEventKeycode)
@@ -197,32 +201,44 @@ final class TextExpander {
         case .delete:
             if !typed.isEmpty { typed.removeLast() }
             return true
-        case .text(let s):
+        case .text(let s) where s != " ":
             typed = String((typed + s).suffix(100))
+            return true
+        case .text:
+            break
         }
+        // A space ends the word: when the word is a trigger, it's replaced (the space stays).
+        // Waiting for the space lets one trigger start another, like -phone and -phone-uk.
         TextShortcuts.shared.reloadIfStale()
-        guard let match = TextShortcuts.shared.match(typed) else { return true }
+        guard let match = TextShortcuts.shared.match(typed) else {
+            typed = String((typed + " ").suffix(100))
+            return true
+        }
         typed = ""
         pending = match
         expansion += 1
         let id = expansion
-        // This key goes through first, so the whole trigger is there to delete.
-        DispatchQueue.main.async { self.insert(match.text, deleting: match.trigger.count) }
+        // The space goes through first, so the trigger and the space are there to delete.
+        DispatchQueue.main.async { self.insert(match.text + " ", deleting: match.trigger.count + 1) }
         // In case the ⌘V is never seen coming back, don't hold the keyboard for long.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { if self.expansion == id { self.release() } }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { if self.expansion == id { self.release(all: true) } }
         return true
     }
 
-    /// Lets the keys held back during an expansion through, in the order they were typed.
-    private func release() {
-        expansion += 1
-        pending = nil
+    /// Lets the keys held back during an expansion through, in the order they were typed. Keys
+    /// already on their way to the tap would overtake them, so new ones stay held until the last
+    /// of these has gone by; then those follow, until none are left. `all` ends it at once.
+    private func release(all: Bool = false) {
         let events = held
         held = []
-        heldKeys = []
-        for e in events {
-            e.setIntegerValueField(.eventSourceUserData, value: Self.marker)
+        for (i, e) in events.enumerated() {
+            e.setIntegerValueField(.eventSourceUserData, value: i == events.count - 1 && !all ? Self.lastHeld : Self.marker)
             e.post(tap: .cgSessionEventTap)
+        }
+        if events.isEmpty || all {
+            pending = nil
+            heldKeys = []
+            expansion += 1
         }
     }
 

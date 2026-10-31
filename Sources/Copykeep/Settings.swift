@@ -391,7 +391,7 @@ struct ShortcutsSection: View {
             }
         } footer: {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Type a shortcut, such as -email, at the start of a word in any app and it's replaced with its text. The panel's Shortcuts tab lists them too. Needs Accessibility, like pasting.")
+                Text("Type a shortcut such as -email and a space, at the start of a word in any app, and it's replaced with its text. The panel's Shortcuts tab lists them too. Needs Accessibility, like pasting.")
                 HStack(spacing: 4) {
                     Text("Saved in ~/.config/copykeep/shortcuts.json")
                     Button("Show") { NSWorkspace.shared.activateFileViewerSelecting([TextShortcuts.fileURL]) }

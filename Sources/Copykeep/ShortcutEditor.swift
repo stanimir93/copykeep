@@ -48,7 +48,7 @@ struct ShortcutEditorView: View {
                     .font(.system(.body, design: .monospaced))
                     .textFieldStyle(.roundedBorder)
             }
-            Text("Replaced by the text below when you type it in any app, at the start of a word. A sign in front, like -email or ;sig, keeps it from firing in normal writing.")
+            Text("Type it and a space in any app, at the start of a word, and it's replaced by the text below. A sign in front, like -email or ;sig, keeps it from firing in normal writing.")
                 .font(.footnote).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Text("Text").font(.callout)

@@ -21,7 +21,7 @@ ClipboardShelf out of Applications yourself and allow Accessibility for Copykeep
   must appear in the clip or the name of the app it came from, and matching clips stay listed
   with the newest first.
 - **Tabs:** All, Pinned, Text, Images, Links and Shortcuts. Tab and ⇧Tab switch between them.
-- **Text shortcuts.** Type `-email` in any app and it's replaced with your email address. The
+- **Text shortcuts.** Type `-email` and a space in any app and it's replaced with your email address. The
   Shortcuts tab lists them; Return pastes one from there too. See [Text shortcuts](#text-shortcuts).
 - **Pinned clips** stay at the top of All and are never removed, by the history limit or by Clear.
 - **Keeps text, formatting, links, images and files.** Formatting (RTF, HTML) comes back when you
@@ -131,11 +131,11 @@ apps that ask, so the rule switches that on (`AXManualAccessibility`) for the br
 
 ## Text shortcuts
 
-A shortcut is a short trigger, such as `-email`, and the text it stands for. Type the trigger in
-any app and Copykeep deletes it and pastes the text. It fires only at the start of a word (after a
-space, punctuation or nothing), so `re-email` stays as typed. A sign in front, like `-` or `;`,
-keeps a trigger from firing in normal writing. When one trigger ends another (`-mail` and
-`-email`), the longer one wins.
+A shortcut is a short trigger, such as `-email`, and the text it stands for. Type the trigger and
+a space in any app and Copykeep replaces the trigger with the text, keeping the space. Because it
+waits for the space, one trigger can start another (`-phone` and `-phone-uk`). It fires only at
+the start of a word (after a space, punctuation or nothing), so `re-email` stays as typed. A sign
+in front, like `-` or `;`, keeps a trigger from firing in normal writing.
 
 Make them in the panel's Shortcuts tab (⌘N, or New in its footer) or in Settings › Shortcuts,
 which also turns expanding off. Expanding needs Accessibility, like pasting.

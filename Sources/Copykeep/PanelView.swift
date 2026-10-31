@@ -163,7 +163,7 @@ struct PanelView: View {
         switch model.tab {
         case .pinned: return "Nothing pinned yet. Select a clip and press ⌘P to keep it here."
         case .all: return "Nothing copied yet. Copy something and it shows up here."
-        case .shortcuts: return "No shortcuts yet. Make one like -email, and typing it in any app puts in your email address."
+        case .shortcuts: return "No shortcuts yet. Make one like -email, and typing it and a space in any app puts in your email address."
         default: return "No \(model.tab.rawValue.lowercased()) copied yet."
         }
     }
