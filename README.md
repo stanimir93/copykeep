@@ -175,7 +175,7 @@ CS=/Applications/Copykeep.app/Contents/MacOS/Copykeep
 $CS --dump                         # the history as JSON (what the panel lists)
 $CS --snapshot panel.png dark zens # draw the panel offscreen, dark, searching "zens"
 $CS --snapshot s.png tab=shortcuts # draw it on the Shortcuts tab
-$CS --snapshot-settings s.png dark # draw the Settings window offscreen
+$CS --snapshot-settings s.png dark shortcuts # draw the Settings window offscreen, on a pane
 $CS --expire                       # delete the clips past their auto-clear time, print them
 $CS --register-login-item          # launch at login on (--unregister-login-item: off)
 ```

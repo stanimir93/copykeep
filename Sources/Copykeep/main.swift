@@ -5,7 +5,7 @@ import SwiftUI
 // Command-line switches; each exits without starting the app.
 //   --dump                         print the history as JSON (no clipboard data, only what the panel lists)
 //   --snapshot FILE.png [dark] [tab=NAME] [SEARCH]   draw the panel offscreen with the current history
-//   --snapshot-settings FILE.png [dark]   draw the Settings window offscreen
+//   --snapshot-settings FILE.png [dark] [PANE]   draw the Settings window offscreen (PANE: general, history, auto-clear, shortcuts)
 //   --expire                       delete the clips past their auto-clear time and print them
 //   --register-login-item          turn launch at login on (scripts/install.sh)
 //   --unregister-login-item        turn it off
@@ -87,14 +87,17 @@ if let i = args.firstIndex(of: "--snapshot"), i + 1 < args.count {
 }
 if let i = args.firstIndex(of: "--snapshot-settings"), i + 1 < args.count {
     _ = NSApplication.shared
-    let dark = args.dropFirst(i + 2).first == "dark"
+    let rest = args.dropFirst(i + 2)
+    let dark = rest.contains("dark")
+    if let p = rest.compactMap({ w in SettingsPane.allCases.first { $0.rawValue.lowercased() == w.lowercased() } }).first {
+        UserDefaults.standard.set(p.rawValue, forKey: "settingsPane")
+    }
     let view = NSHostingView(rootView: SettingsView(history: History()))
-    view.frame = NSRect(origin: .zero, size: view.fittingSize)
+    view.frame = NSRect(origin: .zero, size: SettingsWindowController.size)
     let window = NSWindow(contentRect: view.frame, styleMask: [.borderless], backing: .buffered, defer: false)
     window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
     window.contentView = view
     RunLoop.main.run(until: Date().addingTimeInterval(0.7))
-    view.frame.size = view.fittingSize
     view.layoutSubtreeIfNeeded()
     guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { exit(1) }
     view.cacheDisplay(in: view.bounds, to: rep)

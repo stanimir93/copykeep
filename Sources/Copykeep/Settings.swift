@@ -4,8 +4,10 @@ import Combine
 import ServiceManagement
 import SwiftUI
 
-/// Settings window, opened from the panel's gear or the menu bar icon's menu.
+/// Settings window, opened from the panel's gear or the menu bar icon's menu. Laid out like
+/// System Settings: panes in a sidebar, each one scrolling on its own.
 final class SettingsWindowController {
+    static let size = NSSize(width: 720, height: 540)
     private let history: History
     private var window: NSWindow?
 
@@ -13,11 +15,16 @@ final class SettingsWindowController {
 
     func show() {
         if window == nil {
-            let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 440, height: 560),
-                             styleMask: [.titled, .closable], backing: .buffered, defer: false)
+            let w = NSWindow(contentRect: NSRect(origin: .zero, size: Self.size),
+                             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+                             backing: .buffered, defer: false)
             w.title = "Copykeep Settings"
             w.isReleasedWhenClosed = false
+            w.toolbar = NSToolbar()
+            w.toolbarStyle = .unified
+            w.contentMinSize = NSSize(width: 620, height: 400)
             w.contentViewController = NSHostingController(rootView: SettingsView(history: history))
+            w.setContentSize(Self.size)
             w.center()
             window = w
         }
@@ -48,14 +55,75 @@ final class LoginItem: ObservableObject {
     }
 }
 
+/// The sidebar's panes, with System Settings-style icons: a white symbol on a coloured square.
+enum SettingsPane: String, CaseIterable, Identifiable {
+    case general = "General", history = "History", autoClear = "Auto-clear", shortcuts = "Shortcuts"
+    var id: Self { self }
+
+    var symbol: String {
+        switch self {
+        case .general: return "gearshape.fill"
+        case .history: return "clock.arrow.circlepath"
+        case .autoClear: return "timer"
+        case .shortcuts: return "character.cursor.ibeam"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .general: return .gray
+        case .history: return .blue
+        case .autoClear: return .orange
+        case .shortcuts: return .purple
+        }
+    }
+}
+
 struct SettingsView: View {
     @ObservedObject var history: History
+    @AppStorage("settingsPane") private var pane: SettingsPane = .general
+
+    var body: some View {
+        NavigationSplitView {
+            List(SettingsPane.allCases, selection: Binding(get: { pane }, set: { if let p = $0 { pane = p } })) { p in
+                Label {
+                    Text(p.rawValue)
+                } icon: {
+                    Image(systemName: p.symbol)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 20, height: 20)
+                        .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(p.color.gradient))
+                }
+                .tag(p)
+            }
+            .navigationSplitViewColumnWidth(min: 170, ideal: 190, max: 240)
+        } detail: {
+            Group {
+                switch pane {
+                case .general: GeneralPane()
+                case .history: HistoryPane(history: history)
+                case .autoClear: Form { AutoClearSection(history: history) }.formStyle(.grouped)
+                case .shortcuts: Form { ShortcutsSection() }.formStyle(.grouped)
+                }
+            }
+            .navigationTitle(pane.rawValue)
+        }
+        .frame(minWidth: 620, minHeight: 400)
+    }
+}
+
+private func note(_ s: String) -> some View {
+    Text(s).font(.footnote).foregroundStyle(.secondary)
+        .multilineTextAlignment(.leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
+}
+
+/// General: the key that opens the clipboard, Accessibility and launch at login.
+struct GeneralPane: View {
     @StateObject private var login = LoginItem()
     @ObservedObject private var hotKey = HotKey.shared
-    @AppStorage("maxItems") private var maxItems = 200
-    @AppStorage("maskSecrets") private var maskSecrets = true
     @State private var trusted = Paster.trusted
-    @State private var confirmClear = false
     private let tick = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var body: some View {
@@ -66,7 +134,7 @@ struct SettingsView: View {
                     Text(error).font(.footnote).foregroundStyle(.red)
                 }
             } header: {
-                Text("Shortcut")
+                Text("Keyboard")
             } footer: {
                 note("Press it in any app to open the clipboard next to the text cursor, and again to close it. To change it, click the button and press the new keys; Esc cancels, Delete removes it.")
             }
@@ -85,9 +153,36 @@ struct SettingsView: View {
             } header: {
                 Text("Pasting")
             } footer: {
-                note("Needed to paste into the app you're in and to open next to the text cursor. Without it, choosing a clip copies it and you press ⌘V yourself.")
+                note("Needed to paste into the app you're in, to open next to the text cursor and to expand text shortcuts. Without it, choosing a clip copies it and you press ⌘V yourself.")
             }
 
+            Section {
+                Toggle("Open at login", isOn: Binding(get: { login.enabled }, set: { login.set($0) }))
+                if login.needsApproval {
+                    Button("Approve in Login Items") { SMAppService.openSystemSettingsLoginItems() }
+                }
+                if let error = login.error { Text(error).font(.footnote).foregroundStyle(.red) }
+            } header: {
+                Text("Startup")
+            }
+        }
+        .formStyle(.grouped)
+        .onReceive(tick) { _ in
+            trusted = Paster.trusted
+            login.refresh()
+        }
+    }
+}
+
+/// History: how many clips to keep, hiding secrets, and clearing.
+struct HistoryPane: View {
+    @ObservedObject var history: History
+    @AppStorage("maxItems") private var maxItems = 200
+    @AppStorage("maskSecrets") private var maskSecrets = true
+    @State private var confirmClear = false
+
+    var body: some View {
+        Form {
             Section {
                 Picker("Keep", selection: $maxItems) {
                     ForEach(History.sizes, id: \.self) { Text("\($0) clips").tag($0) }
@@ -100,39 +195,11 @@ struct SettingsView: View {
                         confirmClear.toggle()
                     }
                 }
-            } header: {
-                Text("History")
             } footer: {
-                note("Pinned clips are never removed. Nothing copied in a password manager (1Password, Bitwarden, Passwords, Keychain Access) is kept, nor anything an app marks as concealed, unless an auto-clear rule below covers it. Hidden secrets still paste in full.")
-            }
-
-            AutoClearSection(history: history)
-
-            ShortcutsSection()
-
-            Section {
-                Toggle("Open at login", isOn: Binding(get: { login.enabled }, set: { login.set($0) }))
-                if login.needsApproval {
-                    Button("Approve in Login Items") { SMAppService.openSystemSettingsLoginItems() }
-                }
-                if let error = login.error { Text(error).font(.footnote).foregroundStyle(.red) }
-            } header: {
-                Text("General")
+                note("Pinned clips are never removed. Nothing copied in a password manager (1Password, Bitwarden, Passwords, Keychain Access) is kept, nor anything an app marks as concealed, unless an Auto-clear rule covers it. Hidden secrets still paste in full.")
             }
         }
         .formStyle(.grouped)
-        .frame(width: 440)
-        .fixedSize(horizontal: false, vertical: true)
-        .onReceive(tick) { _ in
-            trusted = Paster.trusted
-            login.refresh()
-        }
-    }
-
-    private func note(_ s: String) -> some View {
-        Text(s).font(.footnote).foregroundStyle(.secondary)
-            .multilineTextAlignment(.leading)
-            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -237,8 +304,6 @@ struct AutoClearSection: View {
             if let error = autoClear.error {
                 Text(error).font(.footnote).foregroundStyle(.red)
             }
-        } header: {
-            Text("Auto-clear")
         } footer: {
             VStack(alignment: .leading, spacing: 4) {
                 Text("All clips, or clips copied from these apps, are deleted after the time you choose, counted from the last copy or paste, and taken off the clipboard if they're still on it. When both apply, the shorter time wins. Pinned clips stay. Bitwarden (browser extension) covers copies made in its popup or web vault in Chrome, Edge, Brave, Zen, Firefox and Safari.")
@@ -294,6 +359,8 @@ struct ShortcutsSection: View {
     var body: some View {
         Section {
             Toggle("Expand shortcuts as you type", isOn: $expand)
+        }
+        Section {
             ForEach(store.shortcuts) { s in
                 HStack(spacing: 8) {
                     Text(s.trigger).font(.system(.body, design: .monospaced))
@@ -322,8 +389,6 @@ struct ShortcutsSection: View {
             if let error = store.error {
                 Text(error).font(.footnote).foregroundStyle(.red)
             }
-        } header: {
-            Text("Shortcuts")
         } footer: {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Type a shortcut, such as -email, at the start of a word in any app and it's replaced with its text. The panel's Shortcuts tab lists them too. Needs Accessibility, like pasting.")
