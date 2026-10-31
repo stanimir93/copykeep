@@ -356,13 +356,26 @@ struct ShortcutsSection: View {
     @ObservedObject private var store = TextShortcuts.shared
     @AppStorage("expandShortcuts") private var expand = true
     @AppStorage("suggestShortcuts") private var suggest = true
+    @AppStorage("suggestPrefix") private var prefix = TextExpander.defaultSuggestPrefix
 
     var body: some View {
         Section {
             Toggle("Expand shortcuts as you type", isOn: $expand)
-            Toggle("Suggest shortcuts as you type", isOn: $suggest)
-                .disabled(!expand)
         }
+        Section {
+            Toggle("Show suggestions", isOn: $suggest)
+            LabeledContent("Show them when I type") {
+                TextField("", text: $prefix, prompt: Text("start of a trigger"))
+                    .font(.system(.body, design: .monospaced))
+                    .textFieldStyle(.roundedBorder)
+                    .multilineTextAlignment(.center)
+                    .frame(width: 140)
+            }
+            .disabled(!suggest)
+        } footer: {
+            note("Type it at the start of a word, in any app, to list your shortcuts under the cursor, then a few letters to narrow the list: \(prefix.isEmpty ? "--" : prefix)ph finds -phone. ↑ ↓ choose, Tab or Return puts one in, Esc closes the list. Clear the box to list them as soon as you start typing a trigger, like -ph.")
+        }
+        .disabled(!expand)
         Section {
             ForEach(store.shortcuts) { s in
                 HStack(spacing: 8) {
@@ -394,7 +407,7 @@ struct ShortcutsSection: View {
             }
         } footer: {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Type a shortcut such as -email and a space, at the start of a word in any app, and it's replaced with its text. While you type one, the ones it could be are listed under the cursor: Tab or Return puts in the chosen one. The panel's Shortcuts tab lists them too. Needs Accessibility, like pasting.")
+                Text("Type a shortcut such as -email and a space, at the start of a word in any app, and it's replaced with its text. The panel's Shortcuts tab lists them too. Needs Accessibility, like pasting.")
                 HStack(spacing: 4) {
                     Text("Saved in ~/.config/copykeep/shortcuts.json")
                     Button("Show") { NSWorkspace.shared.activateFileViewerSelecting([TextShortcuts.fileURL]) }

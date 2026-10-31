@@ -51,16 +51,28 @@ final class TextShortcuts: ObservableObject {
         write()
     }
 
-    /// The shortcut whose trigger `typed` ends with, at the start of a word: after a space,
-    /// punctuation or nothing, so "-email" fires but "re-email" doesn't. The longest wins.
-    /// Called when a space is typed.
+    /// The shortcut whose trigger `typed` ends with, at the start of a word: after a space, an
+    /// opening bracket or quote, or nothing, so "-email" fires but "re-email" and "--email"
+    /// don't. The longest wins. Called when a space is typed.
     func match(_ typed: String) -> TextShortcut? {
         shortcuts.filter { !$0.trigger.isEmpty && typed.hasSuffix($0.trigger) }
             .sorted { $0.trigger.count > $1.trigger.count }
             .first { s in
                 guard let before = typed.dropLast(s.trigger.count).last else { return true }
-                return !(before.isLetter || before.isNumber)
+                return before.isWhitespace || "([{<\"'“‘«".contains(before)
             }
+    }
+
+    /// The shortcuts for the suggestion list after its opening symbol, for what's typed after it:
+    /// first those whose trigger starts with it (leaving out the trigger's sign, so "ph" finds
+    /// -phone), then those whose trigger or text contains it. All of them when nothing's typed.
+    func suggestions(for query: String) -> [TextShortcut] {
+        let q = query.lowercased()
+        guard !q.isEmpty else { return shortcuts }
+        func name(_ s: TextShortcut) -> String { String(s.trigger.drop { !($0.isLetter || $0.isNumber) }).lowercased() }
+        let starting = shortcuts.filter { name($0).hasPrefix(q) || $0.trigger.lowercased().hasPrefix(q) }
+        let containing = shortcuts.filter { s in !starting.contains(s) && s.searchText.contains(q) }
+        return starting + containing
     }
 
     /// Reads the file again when it changed since the last read.
@@ -144,6 +156,12 @@ final class TextExpander {
     private static let lastHeld: Int64 = 0x436B_6B71
     static var enabled: Bool { UserDefaults.standard.object(forKey: "expandShortcuts") as? Bool ?? true }
     static var suggests: Bool { UserDefaults.standard.object(forKey: "suggestShortcuts") as? Bool ?? true }
+    /// What opens the suggestion list when typed at the start of a word (Settings › Shortcuts).
+    /// Empty: the list opens as soon as a word starts like a trigger.
+    static let defaultSuggestPrefix = "--"
+    static var suggestPrefix: String {
+        (UserDefaults.standard.string(forKey: "suggestPrefix") ?? defaultSuggestPrefix).filter { !$0.isWhitespace }
+    }
 
     init(watcher: ClipboardWatcher) {
         self.watcher = watcher
@@ -238,12 +256,15 @@ final class TextExpander {
         return true
     }
 
-    /// Puts in `shortcut`'s text (and `then`) in place of the last `count` characters typed.
-    private func expand(_ shortcut: TextShortcut, deleting count: Int, then: String = "") {
+    /// Puts in `shortcut`'s text (and `then`) in place of the last `count` characters typed, or
+    /// of `typedWord` as the app shows it.
+    private func expand(_ shortcut: TextShortcut, deleting count: Int, then: String = "", typedWord: String? = nil) {
         pending = shortcut
         expansion += 1
         let id = expansion
-        DispatchQueue.main.async { self.insert(shortcut.text + then, deleting: count) }
+        DispatchQueue.main.async {
+            self.insert(shortcut.text + then, deleting: typedWord.map(Self.lengthInApp) ?? count)
+        }
         // In case the ⌘V is never seen coming back, don't hold the keyboard for long.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { if self.expansion == id { self.release(all: true) } }
     }
@@ -253,13 +274,23 @@ final class TextExpander {
         typed[(typed.lastIndex(of: " ").map { typed.index(after: $0) } ?? typed.startIndex)...]
     }
 
-    /// Shows the shortcuts that start with the word being typed, or hides the list when none do.
+    /// Lists the shortcuts for the word being typed, or hides the list when there are none. With
+    /// an opening symbol set (-- by default), the word must start with it and what follows
+    /// narrows the list; without one, the word must be the start of a trigger.
     private func suggest() {
         let w = word
         if w.isEmpty { dismissed = false }
         guard Self.suggests, !dismissed, !w.isEmpty else { suggestions.hide(); return }
         TextShortcuts.shared.reloadIfStale()
-        let items = TextShortcuts.shared.shortcuts.filter { $0.trigger.hasPrefix(w) }
+        let prefix = Self.suggestPrefix
+        let items: [TextShortcut]
+        if prefix.isEmpty {
+            items = TextShortcuts.shared.shortcuts.filter { $0.trigger.hasPrefix(w) }
+        } else if w.hasPrefix(prefix) {
+            items = TextShortcuts.shared.suggestions(for: String(w.dropFirst(prefix.count)))
+        } else {
+            items = []
+        }
         if items.isEmpty { suggestions.hide() } else { suggestions.show(items) }
     }
 
@@ -283,11 +314,22 @@ final class TextExpander {
 
     /// Replaces the word being typed with `shortcut`'s text (chosen from the list).
     private func accept(_ shortcut: TextShortcut) {
-        let count = word.count
+        let w = String(word)
         suggestions.hide()
         typed = ""
         dismissed = false
-        expand(shortcut, deleting: count)
+        expand(shortcut, deleting: w.count, typedWord: w)
+    }
+
+    /// How many characters `word` takes up in the app. Fewer than typed when the app turned --
+    /// into a dash (smart dashes in TextEdit, Notes, Mail…): the text before the cursor says.
+    private static func lengthInApp(_ word: String) -> Int {
+        guard word.contains("--"), let before = Caret.textBefore(word.count), !before.hasSuffix(word) else { return word.count }
+        for dash in ["—", "–"] {
+            let shown = word.replacingOccurrences(of: "--", with: dash)
+            if before.hasSuffix(shown) { return shown.count }
+        }
+        return word.count
     }
 
     private func reset() {

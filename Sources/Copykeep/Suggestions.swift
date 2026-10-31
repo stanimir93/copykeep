@@ -50,7 +50,7 @@ final class SuggestionPopup {
     /// time, the list is placed under the text cursor (asked for after this key, so typing isn't
     /// held up), or at the mouse when the app doesn't say where its cursor is.
     func show(_ items: [TextShortcut]) {
-        let keep = selected?.trigger
+        let keep = isShown ? selected?.trigger : nil // a new list starts at the top
         model.items = items
         model.selected = items.firstIndex { $0.trigger == keep } ?? 0
         resize()

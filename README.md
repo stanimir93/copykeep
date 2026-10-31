@@ -22,7 +22,7 @@ ClipboardShelf out of Applications yourself and allow Accessibility for Copykeep
   with the newest first.
 - **Tabs:** All, Pinned, Text, Images, Links and Shortcuts. Tab and ⇧Tab switch between them.
 - **Text shortcuts.** Type `-email` and a space in any app and it's replaced with your email address.
-  Start typing one and a list of the matching shortcuts opens under the cursor. The
+  Type `--` (or a symbol you choose) and a list of them opens under the cursor. The
   Shortcuts tab lists them; Return pastes one from there too. See [Text shortcuts](#text-shortcuts).
 - **Pinned clips** stay at the top of All and are never removed, by the history limit or by Clear.
 - **Keeps text, formatting, links, images and files.** Formatting (RTF, HTML) comes back when you
@@ -135,14 +135,20 @@ apps that ask, so the rule switches that on (`AXManualAccessibility`) for the br
 A shortcut is a short trigger, such as `-email`, and the text it stands for. Type the trigger and
 a space in any app and Copykeep replaces the trigger with the text, keeping the space. Because it
 waits for the space, one trigger can start another (`-phone` and `-phone-uk`). It fires only at
-the start of a word (after a space, punctuation or nothing), so `re-email` stays as typed. A sign
+the start of a word (after a space, an opening bracket or quote, or nothing), so `re-email` and
+`--email` stay as typed. A sign
 in front, like `-` or `;`, keeps a trigger from firing in normal writing.
 
-As you start typing a trigger, a list under the text cursor shows the shortcuts that begin with
-what you've typed (`-ph` lists `-phone` and `-phone-uk`). ↑ ↓ choose, Tab or Return puts in the
-chosen one, and Esc closes the list for that word. Any other key goes to the app as usual. In apps
-that don't say where their cursor is (some Electron apps), the list opens at the mouse. Settings ›
-Shortcuts can turn the list off.
+Type `--` at the start of a word and a list of your shortcuts opens under the text cursor. Letters
+after it narrow the list: `--ph` lists `-phone` and `-phone-uk` (triggers starting with them come
+first, then shortcuts whose text contains them, so `--gmail` finds your email). ↑ ↓ choose, Tab
+or Return puts in the chosen one in place of what you typed, and Esc closes the list for that
+word. Any other key goes to the app as usual. In apps that don't say where their cursor is (some
+Electron apps), the list opens at the mouse.
+
+Settings › Shortcuts turns the list off or changes what opens it: `--`, `§` or any other
+characters. With the box empty, the list opens as soon as a word starts like a trigger (`-ph`).
+From a script: `defaults write com.stanimir93.copykeep suggestPrefix '§'`.
 
 Make them in the panel's Shortcuts tab (⌘N, or New in its footer) or in Settings › Shortcuts,
 which also turns expanding off. Expanding needs Accessibility, like pasting.

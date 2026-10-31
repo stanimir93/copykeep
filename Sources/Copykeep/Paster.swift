@@ -100,6 +100,30 @@ enum Caret {
         return flip(CGRect(origin: p, size: s))
     }
 
+    /// Up to `count` characters before the text cursor in the app you're in, or nil when the app
+    /// doesn't say (or text is selected).
+    static func textBefore(_ count: Int) -> String? {
+        guard Paster.trusted else { return nil }
+        let system = AXUIElementCreateSystemWide()
+        AXUIElementSetMessagingTimeout(system, 0.25)
+        var focused: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(system, kAXFocusedUIElementAttribute as CFString, &focused) == .success,
+              let focused, CFGetTypeID(focused) == AXUIElementGetTypeID() else { return nil }
+        let element = focused as! AXUIElement
+        var value: CFTypeRef?
+        var r = CFRange()
+        guard AXUIElementCopyAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, &value) == .success,
+              let value, CFGetTypeID(value) == AXValueGetTypeID(), AXValueGetValue(value as! AXValue, .cfRange, &r),
+              r.length == 0 else { return nil }
+        let start = max(0, r.location - count)
+        var want = CFRange(location: start, length: r.location - start)
+        guard let range = AXValueCreate(.cfRange, &want) else { return nil }
+        var text: CFTypeRef?
+        guard AXUIElementCopyParameterizedAttributeValue(element, kAXStringForRangeParameterizedAttribute as CFString,
+                                                         range, &text) == .success else { return nil }
+        return text as? String
+    }
+
     private static func cgRect(_ value: CFTypeRef?) -> CGRect? {
         guard let value, CFGetTypeID(value) == AXValueGetTypeID() else { return nil }
         var r = CGRect.zero
