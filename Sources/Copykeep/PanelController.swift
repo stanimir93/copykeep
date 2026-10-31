@@ -58,6 +58,7 @@ final class PanelController: NSObject, NSWindowDelegate {
     let model: PanelModel
     private let history: History
     private let watcher: ClipboardWatcher
+    private let expander: TextExpander
     private let panel = Panel()
     private var keyMonitor: Any?
     /// The app you were in when the panel opened; the paste goes there.
@@ -66,9 +67,10 @@ final class PanelController: NSObject, NSWindowDelegate {
 
     var isShown: Bool { panel.isVisible }
 
-    init(history: History, watcher: ClipboardWatcher) {
+    init(history: History, watcher: ClipboardWatcher, expander: TextExpander) {
         self.history = history
         self.watcher = watcher
+        self.expander = expander
         model = PanelModel(history: history)
         super.init()
 
@@ -91,6 +93,11 @@ final class PanelController: NSObject, NSWindowDelegate {
         model.onSettings = { [weak self] in
             self?.close()
             self?.onSettings()
+        }
+        model.onPasteShortcut = { [weak self] s in self?.paste(s) }
+        model.onEditShortcut = { [weak self] s in
+            self?.close()
+            ShortcutEditor.shared.open(s)
         }
     }
 
@@ -154,6 +161,15 @@ final class PanelController: NSObject, NSWindowDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { Paster.pressCommandV() }
     }
 
+    /// Pastes a shortcut's text into the app you were in, then puts the clipboard back.
+    private func paste(_ shortcut: TextShortcut) {
+        let target = previousApp
+        close()
+        guard Paster.trusted else { expander.insert(shortcut.text); return } // copied; ⌘V is up to you
+        target?.activate()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [expander] in expander.insert(shortcut.text) }
+    }
+
     private func startKeyMonitor() {
         if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] e in
@@ -171,20 +187,37 @@ final class PanelController: NSObject, NSWindowDelegate {
         case kVK_PageDown: model.move(5)
         case kVK_PageUp: model.move(-5)
         case kVK_Return, kVK_ANSI_KeypadEnter:
-            if let clip = model.selected { paste(clip, plain: mods.contains(.shift)) }
+            if model.tab == .shortcuts {
+                if let s = model.selectedShortcut { paste(s) }
+            } else if let clip = model.selected {
+                paste(clip, plain: mods.contains(.shift))
+            }
         case kVK_Escape:
             if model.query.isEmpty { close() } else { model.query = "" }
         case kVK_Tab:
             model.cycleTab(mods.contains(.shift) ? -1 : 1)
         case kVK_Delete where mods == .command:
-            if let clip = model.selected { history.delete(clip.id) }
+            if model.tab == .shortcuts {
+                if let s = model.selectedShortcut { TextShortcuts.shared.remove(s.trigger) }
+            } else if let clip = model.selected {
+                history.delete(clip.id)
+            }
         default:
             guard mods == .command, let ch = e.charactersIgnoringModifiers?.lowercased() else { return false }
-            if ch == "p", let clip = model.selected {
+            if ch == "p", model.tab != .shortcuts, let clip = model.selected {
                 history.togglePin(clip.id)
             } else if let n = Int(ch), (1...9).contains(n) {
-                let list = model.ordered
-                if n <= list.count { paste(list[n - 1], plain: false) }
+                if model.tab == .shortcuts {
+                    let list = model.shortcuts
+                    if n <= list.count { paste(list[n - 1]) }
+                } else {
+                    let list = model.ordered
+                    if n <= list.count { paste(list[n - 1], plain: false) }
+                }
+            } else if ch == "n" {
+                model.onEditShortcut(nil)
+            } else if ch == "e", model.tab == .shortcuts, let s = model.selectedShortcut {
+                model.onEditShortcut(s)
             } else if ch == "," {
                 model.onSettings()
             } else {

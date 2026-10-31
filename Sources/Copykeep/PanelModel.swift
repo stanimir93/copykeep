@@ -2,7 +2,7 @@ import AppKit
 import Combine
 
 enum ClipTab: String, CaseIterable, Identifiable {
-    case all = "All", pinned = "Pinned", text = "Text", images = "Images", links = "Links"
+    case all = "All", pinned = "Pinned", text = "Text", images = "Images", links = "Links", shortcuts = "Shortcuts"
     var id: Self { self }
 
     func includes(_ clip: Clip) -> Bool {
@@ -12,11 +12,13 @@ enum ClipTab: String, CaseIterable, Identifiable {
         case .text: return clip.kind == .text
         case .images: return clip.kind == .image
         case .links: return clip.kind == .link
+        case .shortcuts: return false
         }
     }
 }
 
-/// The panel's state: search, tab and the selected clip.
+/// The panel's state: search, tab and the selected clip, or the selected text shortcut on the
+/// Shortcuts tab.
 final class PanelModel: ObservableObject {
     struct Section: Identifiable {
         let id: String
@@ -38,16 +40,23 @@ final class PanelModel: ObservableObject {
     private var lastMouse = NSPoint.zero
     var onPaste: (Clip, _ plain: Bool) -> Void = { _, _ in }
     var onSettings: () -> Void = {}
-    private var cancellable: AnyCancellable?
+    /// Opens the shortcut editor, for a new shortcut when nil.
+    var onEditShortcut: (TextShortcut?) -> Void = { _ in }
+    var onPasteShortcut: (TextShortcut) -> Void = { _ in }
+    private var cancellables: [AnyCancellable] = []
 
     init(history: History) {
         self.history = history
         // Keep the selection on a clip that still exists after the history changes.
-        cancellable = history.$clips.dropFirst().receive(on: DispatchQueue.main).sink { [weak self] _ in
+        let keepSelection: (Any) -> Void = { [weak self] _ in
             guard let self else { return }
-            if let s = self.selection, self.ordered.contains(where: { $0.id == s }) { return }
+            if let s = self.selection, self.ids.contains(s) { return }
             self.selectFirst()
         }
+        cancellables = [
+            history.$clips.dropFirst().receive(on: DispatchQueue.main).sink(receiveValue: keepSelection),
+            TextShortcuts.shared.$shortcuts.dropFirst().receive(on: DispatchQueue.main).sink(receiveValue: keepSelection),
+        ]
     }
 
     var maskSecrets: Bool { UserDefaults.standard.object(forKey: "maskSecrets") as? Bool ?? true }
@@ -75,16 +84,26 @@ final class PanelModel: ObservableObject {
     var ordered: [Clip] { sections.flatMap(\.clips) }
     var selected: Clip? { ordered.first { $0.id == selection } ?? ordered.first }
 
+    /// The Shortcuts tab's list, in the file's order, filtered by the search.
+    var shortcuts: [TextShortcut] {
+        let words = query.lowercased().split(separator: " ").map(String.init)
+        return TextShortcuts.shared.shortcuts.filter { s in words.allSatisfy { s.searchText.contains($0) } }
+    }
+    var selectedShortcut: TextShortcut? { shortcuts.first { $0.id == selection } ?? shortcuts.first }
+
+    /// The rows the arrow keys move through on this tab.
+    var ids: [UUID] { tab == .shortcuts ? shortcuts.map(\.id) : ordered.map(\.id) }
+
     func selectFirst() {
-        selection = ordered.first?.id
+        selection = ids.first
         scrollTarget = selection
     }
 
     func move(_ delta: Int) {
-        let list = ordered
+        let list = ids
         guard !list.isEmpty else { return }
-        let i = list.firstIndex { $0.id == selection } ?? -1
-        selection = list[max(0, min(list.count - 1, i + delta))].id
+        let i = list.firstIndex { $0 == selection } ?? -1
+        selection = list[max(0, min(list.count - 1, i + delta))]
         scrollTarget = selection
     }
 
@@ -110,6 +129,7 @@ final class PanelModel: ObservableObject {
         tab = .all
         confirmingClear = false
         trusted = Paster.trusted
+        TextShortcuts.shared.reloadIfChanged()
         lastMouse = NSEvent.mouseLocation
         selectFirst()
         objectWillChange.send() // refresh "3 min ago"

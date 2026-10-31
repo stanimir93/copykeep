@@ -20,7 +20,9 @@ ClipboardShelf out of Applications yourself and allow Accessibility for Copykeep
 - **Search as you type.** The search field is focused when the panel opens. Every word you type
   must appear in the clip or the name of the app it came from, and matching clips stay listed
   with the newest first.
-- **Tabs:** All, Pinned, Text, Images and Links. Tab and ⇧Tab switch between them.
+- **Tabs:** All, Pinned, Text, Images, Links and Shortcuts. Tab and ⇧Tab switch between them.
+- **Text shortcuts.** Type `-email` in any app and it's replaced with your email address. The
+  Shortcuts tab lists them; Return pastes one from there too. See [Text shortcuts](#text-shortcuts).
 - **Pinned clips** stay at the top of All and are never removed, by the history limit or by Clear.
 - **Keeps text, formatting, links, images and files.** Formatting (RTF, HTML) comes back when you
   paste. ⇧Return pastes the text only, without formatting.
@@ -49,7 +51,9 @@ ClipboardShelf out of Applications yourself and allow Accessibility for Copykeep
 | ⇧Return | Paste as plain text |
 | ⌘1 – ⌘9 | Paste the first nine |
 | ⌘P | Pin or unpin |
-| ⌘⌫ | Delete the clip |
+| ⌘⌫ | Delete the clip or shortcut |
+| ⌘N | New text shortcut |
+| ⌘E | Edit the selected shortcut (Shortcuts tab) |
 | Tab, ⇧Tab | Next or previous tab |
 | Esc | Clear the search, or close |
 | ⌘, | Settings |
@@ -125,6 +129,34 @@ goes by the page title "Bitwarden". Copies from the web vault (`vault.bitwarden.
 one-time code after autofill) isn't recognised. Chromium browsers only share page details with
 apps that ask, so the rule switches that on (`AXManualAccessibility`) for the browser you copy in.
 
+## Text shortcuts
+
+A shortcut is a short trigger, such as `-email`, and the text it stands for. Type the trigger in
+any app and Copykeep deletes it and pastes the text. It fires only at the start of a word (after a
+space, punctuation or nothing), so `re-email` stays as typed. A sign in front, like `-` or `;`,
+keeps a trigger from firing in normal writing. When one trigger ends another (`-mail` and
+`-email`), the longer one wins.
+
+Make them in the panel's Shortcuts tab (⌘N, or New in its footer) or in Settings › Shortcuts,
+which also turns expanding off. Expanding needs Accessibility, like pasting.
+
+The shortcuts are in `~/.config/copykeep/shortcuts.json`. The app writes it, and edits made by
+hand or by an agent are picked up the next time you type:
+
+```json
+{
+  "shortcuts": [
+    { "trigger": "-email", "text": "you@example.com" },
+    { "trigger": ";sig", "text": "Best,\nYour Name" }
+  ]
+}
+```
+
+`trigger` is what you type and `text` is what replaces it; `\n` starts a new line. Triggers are
+case-sensitive, and the first of two shortcuts with the same trigger is used. The text goes in
+through the clipboard, which gets its old contents back half a second later, and isn't added to
+the history. Keys typed while it goes in are held back and follow it.
+
 ## Where the history is kept
 
 `~/Library/Application Support/Copykeep`: `history.json` lists the clips, and `blobs/` holds
@@ -142,6 +174,7 @@ format over 30 MB is skipped.
 CS=/Applications/Copykeep.app/Contents/MacOS/Copykeep
 $CS --dump                         # the history as JSON (what the panel lists)
 $CS --snapshot panel.png dark zens # draw the panel offscreen, dark, searching "zens"
+$CS --snapshot s.png tab=shortcuts # draw it on the Shortcuts tab
 $CS --snapshot-settings s.png dark # draw the Settings window offscreen
 $CS --expire                       # delete the clips past their auto-clear time, print them
 $CS --register-login-item          # launch at login on (--unregister-login-item: off)

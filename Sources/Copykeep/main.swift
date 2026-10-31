@@ -4,7 +4,7 @@ import SwiftUI
 
 // Command-line switches; each exits without starting the app.
 //   --dump                         print the history as JSON (no clipboard data, only what the panel lists)
-//   --snapshot FILE.png [dark] [SEARCH]   draw the panel offscreen with the current history
+//   --snapshot FILE.png [dark] [tab=NAME] [SEARCH]   draw the panel offscreen with the current history
 //   --snapshot-settings FILE.png [dark]   draw the Settings window offscreen
 //   --expire                       delete the clips past their auto-clear time and print them
 //   --register-login-item          turn launch at login on (scripts/install.sh)
@@ -58,11 +58,18 @@ if let i = args.firstIndex(of: "--snapshot"), i + 1 < args.count {
     _ = NSApplication.shared
     let rest = Array(args.dropFirst(i + 2))
     let dark = rest.first == "dark"
-    let query = rest.drop { $0 == "dark" }.joined(separator: " ")
+    var words = Array(rest.drop { $0 == "dark" })
+    var tab = ClipTab.all
+    if let t = words.first, t.hasPrefix("tab=") {
+        tab = ClipTab.allCases.first { $0.rawValue.lowercased() == t.dropFirst(4).lowercased() } ?? .all
+        words.removeFirst()
+    }
+    let query = words.joined(separator: " ")
     let history = History()
     let model = PanelModel(history: history)
     model.reset()
     model.trusted = true // the snapshot shows the panel, not this process's Accessibility access
+    model.tab = tab
     model.query = query
     let view = NSHostingView(rootView: PanelView(model: model, history: history)
         .background(dark ? Color(white: 0.14) : Color(white: 0.9))) // stands in for the glass, which doesn't draw offscreen

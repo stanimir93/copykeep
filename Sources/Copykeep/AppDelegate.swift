@@ -3,6 +3,7 @@ import AppKit
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var history: History!
     private var watcher: ClipboardWatcher!
+    private var expander: TextExpander!
     private var panel: PanelController!
     private var settings: SettingsWindowController!
     private var statusItem: NSStatusItem!
@@ -16,13 +17,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         watcher.start()
         // Auto-clear: delete clips past their time, now and every 10 s.
         AutoClear.shared.expire(history)
+        // Text shortcuts: listens to typing once Accessibility is allowed (checked every 10 s).
+        expander = TextExpander(watcher: watcher)
+        expander.start()
         let t = Timer(timeInterval: 10, repeats: true) { [weak self] _ in
             if let history = self?.history { AutoClear.shared.expire(history) }
+            self?.expander.start()
         }
         RunLoop.main.add(t, forMode: .common)
         expiryTimer = t
         settings = SettingsWindowController(history: history)
-        panel = PanelController(history: history, watcher: watcher)
+        panel = PanelController(history: history, watcher: watcher, expander: expander)
+        // Typing in Copykeep's own windows (the panel's search, Settings, the shortcut editor)
+        // never expands.
+        expander.isSuspended = { [weak self] in NSApp.isActive || self?.panel.isShown == true }
         panel.onSettings = { [weak self] in self?.settings.show() }
         HotKey.shared.onPress = { [weak self] in self?.panel.toggleAtCaret() }
 

@@ -8,6 +8,7 @@ struct PanelView: View {
 
     @ObservedObject var model: PanelModel
     @ObservedObject var history: History
+    @ObservedObject private var store = TextShortcuts.shared
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
@@ -18,7 +19,7 @@ struct PanelView: View {
                 .padding(.bottom, 6)
             tabs
             if !model.trusted { accessBanner }
-            list
+            if model.tab == .shortcuts { shortcutList } else { list }
             Divider().opacity(0.6)
             footer
         }
@@ -29,7 +30,7 @@ struct PanelView: View {
     }
 
     private var tabs: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 2) {
             ForEach(ClipTab.allCases) { t in
                 Button {
                     model.tab = t
@@ -39,7 +40,9 @@ struct PanelView: View {
                         Text(t.rawValue)
                     }
                     .font(.system(size: 11.5, weight: model.tab == t ? .semibold : .regular))
-                    .padding(.horizontal, 10)
+                    .lineLimit(1)
+                    .fixedSize()
+                    .padding(.horizontal, 7)
                     .padding(.vertical, 4)
                     .background(Capsule().fill(model.tab == t ? Color.primary.opacity(scheme == .light ? 0.085 : 0.12) : .clear))
                     .contentShape(Rectangle())
@@ -72,19 +75,54 @@ struct PanelView: View {
         .padding(.bottom, 8)
     }
 
+    private func empty(_ symbol: String, button: Bool = false) -> some View {
+        VStack(spacing: 6) {
+            Spacer()
+            Image(systemName: model.query.isEmpty ? symbol : "magnifyingglass")
+                .font(.system(size: 26)).foregroundStyle(.tertiary)
+            Text(emptyText).font(.system(size: 12)).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            if button {
+                Button("New Shortcut") { model.onEditShortcut(nil) }.controlSize(.small).padding(.top, 4)
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 30)
+        .frame(maxWidth: .infinity)
+    }
+
+    @ViewBuilder private var shortcutList: some View {
+        let shortcuts = model.shortcuts
+        let selectedID = model.selection ?? shortcuts.first?.id
+        if shortcuts.isEmpty {
+            empty("text.badge.plus", button: model.query.isEmpty)
+        } else {
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 8) {
+                        ForEach(shortcuts) { s in
+                            ShortcutRow(shortcut: s, selected: s.id == selectedID,
+                                        onPaste: { model.onPasteShortcut(s) },
+                                        onHover: { model.hover(s.id) },
+                                        onEdit: { model.onEditShortcut(s) },
+                                        onDelete: { store.remove(s.trigger) })
+                                .id(s.id)
+                        }
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.bottom, 8)
+                }
+                .onChange(of: model.scrollTarget) { _, id in
+                    if let id { proxy.scrollTo(id) }
+                }
+            }
+        }
+    }
+
     @ViewBuilder private var list: some View {
         let sections = model.sections
         let selectedID = model.selection ?? sections.first?.clips.first?.id
         if sections.isEmpty {
-            VStack(spacing: 6) {
-                Spacer()
-                Image(systemName: model.query.isEmpty ? "doc.on.clipboard" : "magnifyingglass")
-                    .font(.system(size: 26)).foregroundStyle(.tertiary)
-                Text(emptyText).font(.system(size: 12)).foregroundStyle(.secondary).multilineTextAlignment(.center)
-                Spacer()
-            }
-            .padding(.horizontal, 30)
-            .frame(maxWidth: .infinity)
+            empty("doc.on.clipboard")
         } else {
             ScrollViewReader { proxy in
                 ScrollView {
@@ -125,6 +163,7 @@ struct PanelView: View {
         switch model.tab {
         case .pinned: return "Nothing pinned yet. Select a clip and press ⌘P to keep it here."
         case .all: return "Nothing copied yet. Copy something and it shows up here."
+        case .shortcuts: return "No shortcuts yet. Make one like -email, and typing it in any app puts in your email address."
         default: return "No \(model.tab.rawValue.lowercased()) copied yet."
         }
     }
@@ -132,25 +171,28 @@ struct PanelView: View {
     private var footer: some View {
         HStack(spacing: 8) {
             Group {
-                Key("↩"); Text("paste")
-                Key("⇧↩"); Text("plain")
-                Key("⌘P"); Text("pin")
+                if model.tab == .shortcuts {
+                    Key("↩"); Text("paste")
+                    Key("⌘N"); Text("new")
+                    Key("⌘E"); Text("edit")
+                } else {
+                    Key("↩"); Text("paste")
+                    Key("⇧↩"); Text("plain")
+                    Key("⌘P"); Text("pin")
+                }
             }
             .font(.system(size: 10.5))
             .foregroundStyle(.secondary)
             Spacer(minLength: 4)
-            Button(model.confirmingClear ? "Clear all?" : "Clear") {
-                if model.confirmingClear {
-                    history.clearUnpinned()
-                    model.confirmingClear = false
-                } else {
-                    model.confirmingClear = true
-                }
+            if model.tab == .shortcuts {
+                Button("New") { model.onEditShortcut(nil) }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .help("Make a text shortcut (⌘N)")
+            } else {
+                clearButton
             }
-            .buttonStyle(.plain)
-            .font(.system(size: 11, weight: model.confirmingClear ? .semibold : .regular))
-            .foregroundStyle(model.confirmingClear ? Color.red : Color.secondary)
-            .help("Removes everything except pinned clips")
             Button {
                 model.onSettings()
             } label: {
@@ -162,6 +204,21 @@ struct PanelView: View {
         }
         .padding(.horizontal, 12)
         .frame(height: 30)
+    }
+
+    private var clearButton: some View {
+        Button(model.confirmingClear ? "Clear all?" : "Clear") {
+            if model.confirmingClear {
+                history.clearUnpinned()
+                model.confirmingClear = false
+            } else {
+                model.confirmingClear = true
+            }
+        }
+        .buttonStyle(.plain)
+        .font(.system(size: 11, weight: model.confirmingClear ? .semibold : .regular))
+        .foregroundStyle(model.confirmingClear ? Color.red : Color.secondary)
+        .help("Removes everything except pinned clips")
     }
 }
 
@@ -187,12 +244,8 @@ struct ClipRow: View {
     let onPin: () -> Void
     let onDelete: () -> Void
     @State private var hovered = false
-    @Environment(\.colorScheme) private var scheme
-
-    private static let radius: CGFloat = 12
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: Self.radius, style: .continuous)
         VStack(alignment: .leading, spacing: 0) {
             if clip.kind == .image {
                 // The picture fills the card edge to edge; only the line under it is inset.
@@ -207,23 +260,12 @@ struct ClipRow: View {
                 .padding(.vertical, 8)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background {
-            ZStack {
-                cardFill
-                if selected { selectedTint }
-            }
-        }
-        .clipShape(shape)
-        // Like System Settings' grouped boxes: a hairline edge and a soft shadow, so each clip
-        // stands apart from the glass and from the next one.
-        .overlay(shape.strokeBorder(edge, lineWidth: selected ? 1.5 : 0.5))
-        .shadow(color: .black.opacity(scheme == .light ? 0.08 : 0.3), radius: 3, y: 1)
+        .card(selected: selected)
         .overlay(alignment: .topTrailing) {
             if hovered {
                 HStack(spacing: 2) {
-                    iconButton(clip.pinned ? "pin.slash" : "pin", help: clip.pinned ? "Unpin (⌘P)" : "Pin (⌘P)", action: onPin)
-                    iconButton("trash", help: "Delete (⌘⌫)", action: onDelete)
+                    CardButton(symbol: clip.pinned ? "pin.slash" : "pin", help: clip.pinned ? "Unpin (⌘P)" : "Pin (⌘P)", action: onPin)
+                    CardButton(symbol: "trash", help: "Delete (⌘⌫)", action: onDelete)
                 }
                 .padding(5)
             }
@@ -234,15 +276,6 @@ struct ClipRow: View {
             hovered = inside
             if inside { onHover() }
         }
-    }
-
-    /// Near-solid white on the grey-tinted glass in light mode, a clear lift in dark mode.
-    private var cardFill: Color { scheme == .light ? Color.white.opacity(0.92) : Color.white.opacity(0.1) }
-    /// The selection is a light wash of the accent colour, not the full-strength fill.
-    private var selectedTint: Color { Color.accentColor.opacity(scheme == .light ? 0.2 : 0.35) }
-    private var edge: Color {
-        if selected { return Color.accentColor.opacity(scheme == .light ? 0.55 : 0.7) }
-        return scheme == .light ? Color.black.opacity(0.1) : Color.white.opacity(0.1)
     }
 
     private var metaLine: some View {
@@ -297,8 +330,97 @@ struct ClipRow: View {
         parts.append(Format.ago(clip.copiedAt))
         return parts.joined(separator: " · ")
     }
+}
 
-    private func iconButton(_ symbol: String, help: String, action: @escaping () -> Void) -> some View {
+/// A text shortcut in the Shortcuts tab: its text, and the trigger that types it.
+struct ShortcutRow: View {
+    let shortcut: TextShortcut
+    let selected: Bool
+    let onPaste: () -> Void
+    let onHover: () -> Void
+    let onEdit: () -> Void
+    let onDelete: () -> Void
+    @State private var hovered = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(shortcut.text.trimmingCharacters(in: .whitespacesAndNewlines))
+                .font(.system(size: 12))
+                .lineLimit(3)
+                .foregroundStyle(.primary)
+            HStack(spacing: 4) {
+                Text(shortcut.trigger)
+                    .font(.system(size: 10, design: .monospaced))
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
+                    .background(RoundedRectangle(cornerRadius: 4).fill(Color.primary.opacity(0.1)))
+                Text("types this").font(.system(size: 10)).foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .card(selected: selected)
+        .overlay(alignment: .topTrailing) {
+            if hovered {
+                HStack(spacing: 2) {
+                    CardButton(symbol: "pencil", help: "Edit (⌘E)", action: onEdit)
+                    CardButton(symbol: "trash", help: "Delete (⌘⌫)", action: onDelete)
+                }
+                .padding(5)
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onPaste)
+        .onHover { inside in
+            hovered = inside
+            if inside { onHover() }
+        }
+    }
+}
+
+/// A row's card: like System Settings' grouped boxes, a hairline edge and a soft shadow, so each
+/// row stands apart from the glass and from the next one.
+private struct Card: ViewModifier {
+    let selected: Bool
+    @Environment(\.colorScheme) private var scheme
+    private static let radius: CGFloat = 12
+
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: Self.radius, style: .continuous)
+        content
+            .background {
+                ZStack {
+                    fill
+                    if selected { selectedTint }
+                }
+            }
+            .clipShape(shape)
+            .overlay(shape.strokeBorder(edge, lineWidth: selected ? 1.5 : 0.5))
+            .shadow(color: .black.opacity(scheme == .light ? 0.08 : 0.3), radius: 3, y: 1)
+    }
+
+    /// Near-solid white on the grey-tinted glass in light mode, a clear lift in dark mode.
+    private var fill: Color { scheme == .light ? Color.white.opacity(0.92) : Color.white.opacity(0.1) }
+    /// The selection is a light wash of the accent colour, not the full-strength fill.
+    private var selectedTint: Color { Color.accentColor.opacity(scheme == .light ? 0.2 : 0.35) }
+    private var edge: Color {
+        if selected { return Color.accentColor.opacity(scheme == .light ? 0.55 : 0.7) }
+        return scheme == .light ? Color.black.opacity(0.1) : Color.white.opacity(0.1)
+    }
+}
+
+extension View {
+    fileprivate func card(selected: Bool) -> some View { modifier(Card(selected: selected)) }
+}
+
+/// The small round buttons shown on a hovered row.
+private struct CardButton: View {
+    let symbol: String
+    let help: String
+    let action: () -> Void
+
+    var body: some View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: 10.5))
@@ -363,7 +485,10 @@ struct SearchField: NSViewRepresentable {
     }
 
     func updateNSView(_ box: NSView, context: Context) {
-        if let field = model.field, field.stringValue != model.query { field.stringValue = model.query }
+        if let field = model.field {
+            if field.stringValue != model.query { field.stringValue = model.query }
+            field.placeholderString = model.tab == .shortcuts ? "Search shortcuts" : "Search clipboard"
+        }
         let searching = !model.query.isEmpty
         let n = model.ordered.count
         context.coordinator.count?.stringValue = searching ? (n == 1 ? "1 result" : "\(n) results") : ""

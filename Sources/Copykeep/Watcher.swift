@@ -65,7 +65,7 @@ final class ClipboardWatcher {
 
     /// The formats kept. Reading every format an app offers can make it render each one (Excel,
     /// Keynote), so only these are read; they cover text, formatting, links, images and files.
-    private static let keptTypes: [String] = [
+    static let keptTypes: Set<String> = [
         "public.utf8-plain-text", "public.rtf", "com.apple.flat-rtfd", "public.html", "com.apple.webarchive",
         "public.url", "public.url-name", "public.file-url", "public.png", "public.tiff", "public.jpeg", "public.heic",
     ]

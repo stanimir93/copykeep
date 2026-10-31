@@ -108,6 +108,8 @@ struct SettingsView: View {
 
             AutoClearSection(history: history)
 
+            ShortcutsSection()
+
             Section {
                 Toggle("Open at login", isOn: Binding(get: { login.enabled }, set: { login.set($0) }))
                 if login.needsApproval {
@@ -281,6 +283,62 @@ struct AutoClearSection: View {
         guard panel.runModal() == .OK, let url = panel.url, let id = Bundle(url: url)?.bundleIdentifier else { return }
         let name = FileManager.default.displayName(atPath: url.path).replacingOccurrences(of: ".app", with: "")
         autoClear.set(AutoClearRule(app: id, name: name, minutes: 15))
+    }
+}
+
+/// Settings › Shortcuts: typing a trigger in any app puts in its text.
+struct ShortcutsSection: View {
+    @ObservedObject private var store = TextShortcuts.shared
+    @AppStorage("expandShortcuts") private var expand = true
+
+    var body: some View {
+        Section {
+            Toggle("Expand shortcuts as you type", isOn: $expand)
+            ForEach(store.shortcuts) { s in
+                HStack(spacing: 8) {
+                    Text(s.trigger).font(.system(.body, design: .monospaced))
+                    Text(s.text.split(whereSeparator: \.isNewline).first.map(String.init) ?? "")
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Button {
+                        ShortcutEditor.shared.open(s)
+                    } label: {
+                        Image(systemName: "pencil.circle.fill").foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Edit \(s.trigger)")
+                    Button {
+                        store.remove(s.trigger)
+                    } label: {
+                        Image(systemName: "minus.circle.fill").foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Delete \(s.trigger)")
+                }
+            }
+            Button("Add Shortcut…") { ShortcutEditor.shared.open(nil) }
+            if let error = store.error {
+                Text(error).font(.footnote).foregroundStyle(.red)
+            }
+        } header: {
+            Text("Shortcuts")
+        } footer: {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Type a shortcut, such as -email, at the start of a word in any app and it's replaced with its text. The panel's Shortcuts tab lists them too. Needs Accessibility, like pasting.")
+                HStack(spacing: 4) {
+                    Text("Saved in ~/.config/copykeep/shortcuts.json")
+                    Button("Show") { NSWorkspace.shared.activateFileViewerSelecting([TextShortcuts.fileURL]) }
+                        .buttonStyle(.link)
+                        .disabled(!FileManager.default.fileExists(atPath: TextShortcuts.fileURL.path))
+                }
+            }
+            .font(.footnote).foregroundStyle(.secondary)
+            .multilineTextAlignment(.leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .onAppear { store.reloadIfChanged() }
     }
 }
 
