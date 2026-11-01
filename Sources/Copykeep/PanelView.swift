@@ -314,11 +314,21 @@ struct ClipRow: View {
             }
             .foregroundStyle(.primary)
         case .text, .link:
-            Text(clip.preview(maskSecrets: maskSecrets))
-                .font(clip.isCode ? .system(size: 11, design: .monospaced) : .system(size: 12))
-                .lineLimit(clip.kind == .link ? 2 : 3)
-                .truncationMode(clip.kind == .link ? .middle : .tail)
-                .foregroundStyle(.primary)
+            if let color = clip.color {
+                HStack(spacing: 8) {
+                    ColorSwatch(color: color)
+                    Text(clip.preview(maskSecrets: false))
+                        .font(.system(size: 12, design: .monospaced))
+                        .lineLimit(2)
+                        .foregroundStyle(.primary)
+                }
+            } else {
+                Text(clip.preview(maskSecrets: maskSecrets))
+                    .font(clip.isCode ? .system(size: 11, design: .monospaced) : .system(size: 12))
+                    .lineLimit(clip.kind == .link ? 2 : 3)
+                    .truncationMode(clip.kind == .link ? .middle : .tail)
+                    .foregroundStyle(.primary)
+            }
         }
     }
 
@@ -327,8 +337,38 @@ struct ClipRow: View {
         if let app = clip.sourceApp { parts.append(app) }
         if clip.kind == .image, let w = clip.imageWidth, let h = clip.imageHeight { parts.append("\(w)×\(h)") }
         if clip.kind == .file, clip.fileURLs.count > 1 { parts.append("\(clip.fileURLs.count) files") }
+        // A colour written another way also shows its hex.
+        if let color = clip.color, !clip.text.uppercased().contains(color.hex) { parts.append(color.hex) }
         parts.append(Format.ago(clip.copiedAt))
         return parts.joined(separator: " · ")
+    }
+}
+
+/// The colour a clip holds, over a checkerboard so a see-through colour reads as one.
+private struct ColorSwatch: View {
+    let color: ColorValue
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
+        ZStack {
+            if color.alpha < 1 {
+                Canvas { ctx, size in
+                    let cell: CGFloat = 5
+                    ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .color(.white))
+                    for row in 0..<Int(ceil(size.height / cell)) {
+                        for col in 0..<Int(ceil(size.width / cell)) where (row + col).isMultiple(of: 2) {
+                            ctx.fill(Path(CGRect(x: CGFloat(col) * cell, y: CGFloat(row) * cell, width: cell, height: cell)),
+                                     with: .color(Color(white: 0.8)))
+                        }
+                    }
+                }
+            }
+            Color(nsColor: color.nsColor)
+        }
+        .frame(width: 26, height: 26)
+        .clipShape(shape)
+        .overlay(shape.strokeBorder(scheme == .light ? Color.black.opacity(0.15) : Color.white.opacity(0.2), lineWidth: 0.5))
     }
 }
 

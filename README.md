@@ -35,6 +35,10 @@ ClipboardShelf out of Applications yourself and allow Accessibility for Copykeep
   shape (OpenAI, Stripe, GitHub, Slack, AWS, Google, JWTs), and a lone word mixing upper case,
   lower case and digits (likely a password) show as `••••••••`. They still paste in full.
   Settings can turn this off.
+- **Colours show as colours.** Copy a colour value on its own (`#3b82f6`, `3B82F6` from Figma,
+  `rgb()`, `rgba()`, `hsl()`, `hwb()`, `lab()`, `lch()`, `oklab()`, `oklch()`, `color(display-p3 …)`,
+  or a CSS line like `--brand: #ff0;`) and its row shows a swatch, with the hex beside the app name
+  when it was written another way. Searching `colour` lists them.
 - **Code looks like code.** Clips copied from a terminal or a code editor use a monospaced font.
 - **Auto-clear.** Clips copied from chosen apps, such as Bitwarden's browser extension, are
   deleted after a time you pick. All clips can be cleared after a time too (off by default).

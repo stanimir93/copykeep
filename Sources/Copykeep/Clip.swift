@@ -39,6 +39,9 @@ struct Clip: Codable, Identifiable, Equatable {
         "com.sublimetext.4", "com.panic.Nova",
     ]
 
+    /// The colour, when the clip is a colour value on its own (`#3b82f6`, `rgb(…)`, `oklch(…)`).
+    var color: ColorValue? { kind == .text ? ColorValue.parse(text) : nil }
+
     /// What the row shows: the first part of the text, with secrets hidden when that's on.
     func preview(maskSecrets: Bool) -> String {
         switch kind {
@@ -57,6 +60,7 @@ struct Clip: Codable, Identifiable, Equatable {
         var s = String(text.prefix(5000))
         if let sourceApp { s += " " + sourceApp }
         if kind == .image { s += " image screenshot" }
+        if let color { s += " colour color " + color.hex }
         return s.lowercased()
     }
 }
