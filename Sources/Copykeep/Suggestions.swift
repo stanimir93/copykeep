@@ -149,7 +149,7 @@ struct SuggestionView: View {
 
     private func row(_ s: TextShortcut, selected: Bool) -> some View {
         HStack(spacing: 8) {
-            Text(s.trigger)
+            Text(label(s.trigger))
                 .font(.system(size: 11, design: .monospaced))
                 .padding(.horizontal, 5)
                 .padding(.vertical, 1)
@@ -165,6 +165,13 @@ struct SuggestionView: View {
         .frame(height: SuggestionPopup.rowHeight)
         .background(RoundedRectangle(cornerRadius: 7, style: .continuous)
             .fill(selected ? Color.accentColor.opacity(scheme == .light ? 0.2 : 0.35) : .clear))
+    }
+
+    /// The trigger without the opening symbol you just typed (§email shows as email).
+    private func label(_ trigger: String) -> String {
+        let prefix = TextExpander.suggestPrefix
+        guard !prefix.isEmpty, trigger.hasPrefix(prefix), trigger.count > prefix.count else { return trigger }
+        return String(trigger.dropFirst(prefix.count))
     }
 
     private func hint(_ s: String) -> some View {
